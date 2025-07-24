@@ -25,6 +25,14 @@ This is GOAT.io's fork of [Metabase](https://github.com/metabase/metabase) with 
 - Supports `{{variableName}}` syntax with nested path access
 - Example: `Order {{orderId}} created with total {{totalAmount}}`
 
+### 4. Embedded Actions Support (Already in Master)
+- **Status**: Production Ready
+- Always enables actions (bypasses database-level action permissions)
+- Makes action cards visible in embedded dashboards
+- Adds click event support for iframe communication
+- JWT parsing for embedded dashboard actions
+- Request auth tokens from parent window for embedded scenarios
+
 ## Branch Structure
 
 - `master` - Our production branch with all custom features
