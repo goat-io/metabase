@@ -36,7 +36,6 @@ This is GOAT.io's fork of [Metabase](https://github.com/metabase/metabase) with 
 ## Branch Structure
 
 - `master` - Our production branch with all custom features
-- `main` - Alternative production branch (same as master)
 - `feature/*` - Individual feature branches for isolated changes
 - `upstream/master` - Tracks official Metabase repository
 
