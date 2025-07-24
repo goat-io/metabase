@@ -828,9 +828,19 @@
       :session-timezone (driver-api/report-timezone-id-if-supported driver (driver-api/database (driver-api/metadata-provider)))}
      (fn [^Connection conn]
        (with-open [stmt (statement-or-prepared-statement driver conn sql params nil)]
-         {:rows-affected (if (instance? PreparedStatement stmt)
-                           (.executeUpdate ^PreparedStatement stmt)
-                           (.executeUpdate stmt sql))})))
+         (let [has-result-set (if (instance? PreparedStatement stmt)
+                                (.execute ^PreparedStatement stmt)
+                                (.execute stmt sql))]
+           (if has-result-set
+             ;; If execute returns true, we have a ResultSet
+             (with-open [^ResultSet rs (.getResultSet stmt)]
+               (let [rsmeta (.getMetaData rs)
+                     cols (column-metadata driver rsmeta)
+                     rows (into [] (reducible-rows driver rs rsmeta))]
+                 {:rows rows
+                  :columns cols}))
+             ;; If execute returns false, we have an update count
+             {:rows-affected (.getUpdateCount stmt)})))))
     (catch Throwable e
       (throw (ex-info (tru "Error executing write query: {0}" (ex-message e))
                       {:sql sql, :params params, :type driver-api/qp.error-type.invalid-query}
