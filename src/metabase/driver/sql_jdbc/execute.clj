@@ -828,45 +828,19 @@
       :session-timezone (driver-api/report-timezone-id-if-supported driver (driver-api/database (driver-api/metadata-provider)))}
      (fn [^Connection conn]
        (with-open [stmt (statement-or-prepared-statement driver conn sql params nil)]
-         (log/info "Executing SQL:" sql)
-         (log/info "Statement type:" (class stmt))
          (let [has-result-set (if (instance? PreparedStatement stmt)
                                 (.execute ^PreparedStatement stmt)
-                                (.execute stmt sql))
-               _ (log/info "Has ResultSet:" has-result-set)
-               result (if (instance? PreparedStatement stmt)
-                        ;; For PreparedStatement
-                        (if has-result-set
-                          ;; If execute returns true, we have a ResultSet
-                          (with-open [^ResultSet rs (.getResultSet stmt)]
-                            (let [rsmeta (.getMetaData rs)
-                                  cols (column-metadata driver rsmeta)
-                                  rows (into [] (reducible-rows driver rs rsmeta))]
-                              (log/info "ResultSet rows:" rows)
-                              (log/info "ResultSet columns:" cols)
-                              {:rows rows
-                               :columns cols}))
-                          ;; If execute returns false, we have an update count
-                          (let [update-count (.getUpdateCount stmt)]
-                            (log/info "Update count:" update-count)
-                            {:rows-affected update-count}))
-                        ;; For regular Statement
-                        (if has-result-set
-                          ;; If execute returns true, we have a ResultSet
-                          (with-open [^ResultSet rs (.getResultSet stmt)]
-                            (let [rsmeta (.getMetaData rs)
-                                  cols (column-metadata driver rsmeta)
-                                  rows (into [] (reducible-rows driver rs rsmeta))]
-                              (log/info "ResultSet rows:" rows)
-                              (log/info "ResultSet columns:" cols)
-                              {:rows rows
-                               :columns cols}))
-                          ;; If execute returns false, we have an update count
-                          (let [update-count (.getUpdateCount stmt)]
-                            (log/info "Update count:" update-count)
-                            {:rows-affected update-count})))]
-           (log/info "execute-write-query! returning:" result)
-           result))))
+                                (.execute stmt sql))]
+           (if has-result-set
+             ;; If execute returns true, we have a ResultSet
+             (with-open [^ResultSet rs (.getResultSet stmt)]
+               (let [rsmeta (.getMetaData rs)
+                     cols (column-metadata driver rsmeta)
+                     rows (into [] (reducible-rows driver rs rsmeta))]
+                 {:rows rows
+                  :columns cols}))
+             ;; If execute returns false, we have an update count
+             {:rows-affected (.getUpdateCount stmt)}))))
     (catch Throwable e
       (throw (ex-info (tru "Error executing write query: {0}" (ex-message e))
                       {:sql sql, :params params, :type driver-api/qp.error-type.invalid-query}
