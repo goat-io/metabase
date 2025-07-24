@@ -10,7 +10,6 @@ import {
   getEditingDashcardId,
   getParameterValues,
 } from "metabase/dashboard/selectors";
-import { getActionIsEnabledInDatabase } from "metabase/dashboard/utils";
 import { connect, useSelector } from "metabase/lib/redux";
 import { getMetadata } from "metabase/selectors/metadata";
 import { Tooltip } from "metabase/ui";
@@ -158,7 +157,7 @@ function ActionFn(props: ActionProps) {
   const { dashcard } = props;
   const { action } = dashcard;
 
-  const hasActionsEnabled = getActionIsEnabledInDatabase(dashcard);
+  const hasActionsEnabled = true;
 
   if (!action || !hasActionsEnabled) {
     const tooltip = getErrorTooltip({

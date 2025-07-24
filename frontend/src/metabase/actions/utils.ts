@@ -123,11 +123,50 @@ export const getDefaultFormSettings = (
   ...overrides,
 });
 
-export const getSuccessMessage = (action: WritebackAction) => {
-  return (
+export const getSuccessMessage = (action: WritebackAction, result?: any) => {
+  const baseMessage =
     action.visualization_settings?.successMessage ||
-    t`${action.name} ran successfully`
-  );
+    t`${action.name} ran successfully`;
+
+  // If no result or no template variables in message, return as-is
+  if (!result || !baseMessage.includes("{{")) {
+    return baseMessage;
+  }
+
+  // Create a context object with the result data
+  const context: Record<string, any> = {};
+
+  // Add rows data if available
+  if (result.rows && result.columns) {
+    // For single row results, make the values directly accessible
+    if (result.rows.length === 1) {
+      result.columns.forEach((col: any, index: number) => {
+        context[col.name] = result.rows[0][index];
+      });
+    }
+    // Always add the full result structure
+    context.result = result;
+    context.rows = result.rows;
+    context.columns = result.columns;
+  } else if (result["rows-affected"] !== undefined) {
+    context["rows-affected"] = result["rows-affected"];
+  }
+
+  // Replace template variables {{variableName}} with values from context
+  return baseMessage.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (match, path) => {
+    const keys = path.split(".");
+    let value: any = context;
+
+    for (const key of keys) {
+      if (value && typeof value === "object" && key in value) {
+        value = value[key];
+      } else {
+        return match; // Keep original if path not found
+      }
+    }
+
+    return value !== undefined && value !== null ? String(value) : match;
+  });
 };
 
 export const getDefaultFieldSettings = (
@@ -197,10 +236,14 @@ export function getActionExecutionMessage(
   if (action.type === "implicit") {
     return getImplicitActionExecutionMessage(action);
   }
-  if (hasDataFromExplicitAction(result)) {
-    return t`Success! The action returned: ${JSON.stringify(result)}`;
+
+  // For query actions that return data, always use getSuccessMessage
+  // which will interpolate the result data if template variables are present
+  if (hasDataFromExplicitAction(result) || (result && result.rows)) {
+    return getSuccessMessage(action, result);
   }
-  return getSuccessMessage(action);
+
+  return getSuccessMessage(action, result);
 }
 
 export function getActionErrorMessage(error: unknown) {

@@ -27,6 +27,17 @@ export function performAction(
     const url = action.url();
     const ignoreSiteUrl = action.ignoreSiteUrl;
     if (url) {
+      // Hacky way to allow us to communicate from the iframe to the parent window
+      if (url.startsWith("<<event>>")) {
+        // Trigger event in the parent window
+        const eventData = JSON.parse(url.replace("<<event>>:", ""));
+        window.parent?.postMessage(
+          { type: "metabase-action", data: eventData },
+          "*",
+        );
+        return;
+      }
+
       open(url, {
         openInSameOrigin: (location) => {
           dispatch(push(location));
