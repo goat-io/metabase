@@ -840,7 +840,7 @@
                  {:rows rows
                   :columns cols}))
              ;; If execute returns false, we have an update count
-             {:rows-affected (.getUpdateCount stmt)}))))
+             {:rows-affected (.getUpdateCount stmt)})))))
     (catch Throwable e
       (throw (ex-info (tru "Error executing write query: {0}" (ex-message e))
                       {:sql sql, :params params, :type driver-api/qp.error-type.invalid-query}
