@@ -39,6 +39,9 @@
                            (format " AND p.proname IN (%s)"
                                   (str/join "," (map #(format "'%s'" %) routine-names))))
            where-clause (str "WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')" 
+                            " AND NOT EXISTS (SELECT 1 FROM pg_depend d "
+                            "                 JOIN pg_extension e ON e.oid = d.refobjid "
+                            "                 WHERE d.objid = p.oid AND d.deptype = 'e')"
                             type-filter schema-filter routine-filter)
            ;; Include prokind for PG 11+ or dummy field for older versions
            prokind-field (if (>= pg-version 110000) "p.prokind," "")
