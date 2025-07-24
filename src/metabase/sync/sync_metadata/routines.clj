@@ -102,24 +102,58 @@
                                            (name (:routine-type rm))
                                            (:routine-type rm))})
                          routine-metadatas)
-        ;; Find existing inactive routines
+        ;; First, update any existing active routines with nil routine_type
+        existing-nil-type (when (seq routine-keys)
+                           (t2/select :model/Routine
+                                     {:where [:and
+                                              [:= :db_id (:id database)]
+                                              [:in [:composite :schema :name]
+                                               {:values (map (juxt :schema :name) routine-keys)}]
+                                              [:= :routine_type nil]
+                                              [:= :active true]]}))
+        _ (when (seq existing-nil-type)
+            (println "Updating" (count existing-nil-type) "active routines with nil routine_type")
+            (doseq [routine existing-nil-type]
+              (let [metadata (first (filter #(and (= (:schema %) (:schema routine))
+                                                (= (:name %) (:name routine)))
+                                          routine-metadatas))
+                    new-type (if (keyword? (:routine-type metadata))
+                              (name (:routine-type metadata))
+                              (:routine-type metadata))]
+                (t2/update! :model/Routine (:id routine) {:routine_type new-type}))))
+        ;; Find existing inactive routines - check both with matching routine_type AND with nil routine_type
         existing-inactive (when (seq routine-keys)
                            (t2/select :model/Routine
                                      {:where [:and
-                                              [:in [:composite :db_id :schema :name :routine_type]
-                                               {:values (map (juxt :db_id :schema :name :routine_type) routine-keys)}]
+                                              [:or
+                                               ;; Match exact routine type
+                                               [:in [:composite :db_id :schema :name :routine_type]
+                                                {:values (map (juxt :db_id :schema :name :routine_type) routine-keys)}]
+                                               ;; OR match with nil routine_type
+                                               [:and
+                                                [:in [:composite :db_id :schema :name]
+                                                 {:values (map (juxt :db_id :schema :name) routine-keys)}]
+                                                [:= :routine_type nil]]]
                                               [:= :active false]]}))
-        existing-by-key (m/index-by #(select-keys % [:schema :name :routine_type]) existing-inactive)
+        existing-by-key (m/index-by (fn [routine]
+                                     (-> routine
+                                         (select-keys [:schema :name])
+                                         ;; Don't include routine_type in key since it might be nil
+                                         )) existing-inactive)
         ;; Reactivate existing routines in batch
         _ (when (seq existing-inactive)
             (println "Reactivating" (count existing-inactive) "routines in batch")
             (t2/update! :model/Routine
                        {:where [:in :id (map :id existing-inactive)]}
                        {:active true}))
-        ;; Find which routines need to be created
-        routines-to-create (remove #(existing-by-key (-> %
-                                                         (select-keys [:schema :name :routine-type])
-                                                         (update :routine-type (fn [rt] (if (keyword? rt) (name rt) rt)))))
+        ;; Find which routines need to be created - need to check ALL existing (active+inactive+updated)
+        all-existing (t2/select :model/Routine
+                               {:where [:and
+                                        [:= :db_id (:id database)]
+                                        [:in [:composite :schema :name]
+                                         {:values (map (juxt :schema :name) routine-keys)}]]})
+        all-existing-by-key (m/index-by #(select-keys % [:schema :name]) all-existing)
+        routines-to-create (remove #(all-existing-by-key (select-keys % [:schema :name]))
                                   routine-metadatas)]
     ;; Create new routines in batch
     (when (seq routines-to-create)
@@ -178,10 +212,10 @@
                                old-routines)]
     (when (seq routine-conditions)
       (t2/update! :model/Routine
-                  {:where [:and
-                           [:in [:composite :db_id :schema :name :routine_type]
-                            {:values routine-conditions}]
-                           [:= :active true]]}
+                  [:and
+                   [:in [:composite :db_id :schema :name :routine_type]
+                    {:values routine-conditions}]
+                   [:= :active true]]
                   {:active false}))))
 
 (mu/defn- db->our-routines
@@ -195,10 +229,8 @@
       (println "  Routine:" (:name r) "Type:" (:routine_type r) "Type class:" (type (:routine_type r))))
     (into (sorted-set-by #(compare (str %1) (str %2)))
           (map (fn [routine]
-                 ;; Ensure routine_type is not nil for comparison
-                 (if (nil? (:routine_type routine))
-                   (assoc routine :routine_type "unknown")
-                   routine))
+                 ;; Only keep the fields used for comparison
+                 (select-keys routine [:schema :name :routine_type]))
                routines))))
 
 (mu/defn- routine-set
@@ -208,7 +240,11 @@
         (map (fn [routine]
                (-> routine
                    (select-keys [:schema :name :routine-type])
-                   (update :routine-type #(if (keyword? %) (name %) %))))
+                   (update :routine-type (fn [rt]
+                                          (cond
+                                            (nil? rt) nil  ; Keep nil as nil for proper comparison
+                                            (keyword? rt) (name rt)
+                                            :else rt)))))
              routine-metadata)))
 
 (mu/defn sync-routines!
@@ -224,6 +260,16 @@
     (t2/with-transaction [_conn]
       (let [start-time         (System/currentTimeMillis)
             db-routine-metadata (fetch-routine-metadata database)
+          ;; First, fix any existing routines with nil routine_type
+          _ (let [nil-type-routines (t2/select :model/Routine
+                                              :db_id (:id database)
+                                              :routine_type nil
+                                              :active true)]
+              (when (seq nil-type-routines)
+                (println "Found" (count nil-type-routines) "routines with nil routine_type, updating them")
+                (doseq [routine nil-type-routines]
+                  ;; Default to "function" if we can't find metadata
+                  (t2/update! :model/Routine (:id routine) {:routine_type "function"}))))
           db-routines        (routine-set db-routine-metadata)
           our-routines       (db->our-routines database)
           our-routine-set    (routine-set our-routines)
