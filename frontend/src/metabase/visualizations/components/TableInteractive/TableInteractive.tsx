@@ -68,9 +68,11 @@ import type {
   RowValue,
   RowValues,
   VisualizationSettings,
+  WritebackAction,
 } from "metabase-types/api";
 
 import S from "./TableInteractive.module.css";
+import { ActionCell, type RowActionConfig } from "./cells/ActionCell";
 import {
   HeaderCellWithColumnInfo,
   type HeaderCellWithColumnInfoProps,
@@ -106,6 +108,12 @@ interface TableProps extends VisualizationProps {
   renderTableHeader: HeaderCellWithColumnInfoProps["renderTableHeader"];
   onUpdateVisualizationSettings: (settings: VisualizationSettings) => void;
   onZoomRow?: (objectId: number | string) => void;
+  rowActions?: RowActionConfig[];
+  onRowActionClick?: (
+    action: WritebackAction,
+    rowData: any[],
+    rowIndex: number,
+  ) => void;
 }
 
 const getColumnOrder = (cols: DatasetColumn[], hasIndexColumn: boolean) => {
@@ -164,6 +172,8 @@ export const TableInteractiveInner = forwardRef(function TableInteractiveInner(
     getColumnSortDirection: getServerColumnSortDirection,
     onVisualizationClick,
     onUpdateVisualizationSettings,
+    rowActions,
+    onRowActionClick,
   }: TableProps,
   ref: Ref<HTMLDivElement>,
 ) {
@@ -464,7 +474,7 @@ export const TableInteractiveInner = forwardRef(function TableInteractiveInner(
   }, [isRawTable, mode, onVisualizationClick, question, isPivoted]);
 
   const columnsOptions: ColumnOptions<RowValues, RowValue>[] = useMemo(() => {
-    return cols.map((col, columnIndex) => {
+    const dataColumns = cols.map((col, columnIndex) => {
       const columnSettings = settings.column?.(col) ?? {};
 
       const wrap =
@@ -572,6 +582,31 @@ export const TableInteractiveInner = forwardRef(function TableInteractiveInner(
 
       return options;
     });
+
+    // Add actions column if row actions are configured
+    if (rowActions && rowActions.length > 0 && onRowActionClick) {
+      const actionsColumn: ColumnOptions<RowValues, RowValue> = {
+        id: "row-actions",
+        name: t`Actions`,
+        accessorFn: () => null,
+        cellVariant: "text",
+        enableResizing: false,
+        getCellClassName: () => "test-TableInteractive-actionCell",
+        header: () => t`Actions`,
+        align: "middle" as const,
+        cell: ({ row }) => (
+          <ActionCell
+            actions={rowActions}
+            rowData={row.original}
+            rowIndex={row.index}
+            onActionClick={onRowActionClick}
+          />
+        ),
+      };
+      dataColumns.push(actionsColumn);
+    }
+
+    return dataColumns;
   }, [
     theme,
     data,
@@ -589,6 +624,8 @@ export const TableInteractiveInner = forwardRef(function TableInteractiveInner(
     isDashboard,
     tc,
     getInfoPopoversDisabledRef,
+    rowActions,
+    onRowActionClick,
   ]);
 
   const handleColumnResize = useCallback(

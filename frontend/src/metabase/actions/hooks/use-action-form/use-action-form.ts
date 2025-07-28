@@ -45,14 +45,32 @@ function useActionForm({
   );
 
   const cleanedInitialValues = useMemo(() => {
-    const values = validationSchema.cast(initialValues);
+    // Start with schema-validated values
+    const schemaValues = validationSchema.cast(initialValues);
 
-    return _.mapObject(values, (value, fieldId) => {
+    // Add any additional values from initialValues that match parameter IDs
+    const enhancedValues = { ...schemaValues };
+
+    // Match initialValues keys to parameter IDs more flexibly
+    Object.keys(initialValues).forEach((key) => {
+      const matchingParam = parameters.find(
+        (param) =>
+          param.id === key ||
+          param.name === key ||
+          param.id.toLowerCase() === key.toLowerCase(),
+      );
+
+      if (matchingParam && initialValues[key] != null) {
+        enhancedValues[matchingParam.id] = initialValues[key];
+      }
+    });
+
+    return _.mapObject(enhancedValues, (value, fieldId) => {
       const formField = fieldSettings[fieldId];
 
       return formatInitialValue(value, formField?.inputType);
     });
-  }, [initialValues, fieldSettings, validationSchema]);
+  }, [initialValues, fieldSettings, validationSchema, parameters]);
 
   const getCleanValues = useCallback(
     (values: ParametersForActionExecution = {}) => {

@@ -3,6 +3,7 @@ import { Component } from "react";
 import { t } from "ttag";
 import _ from "underscore";
 
+import { ActionParametersInputModal } from "metabase/actions/containers/ActionParametersInputForm";
 import CS from "metabase/css/core/index.css";
 import * as DataGrid from "metabase/lib/data_grid";
 import { displayNameForColumn } from "metabase/lib/formatting";
@@ -13,6 +14,7 @@ import {
   ChartSettingsTableFormatting,
   isFormattable,
 } from "metabase/visualizations/components/settings/ChartSettingsTableFormatting";
+import { createRowActionParameters } from "metabase/visualizations/lib/row-actions";
 import {
   isPivoted as _isPivoted,
   columnSettings,
@@ -46,6 +48,7 @@ import type {
   DatasetData,
   Series,
   VisualizationSettings,
+  WritebackAction,
 } from "metabase-types/api";
 
 import { TableInteractive } from "../../components/TableInteractive";
@@ -57,11 +60,20 @@ import type {
 
 interface TableProps extends VisualizationProps {
   isShowingDetailsOnlyColumns?: boolean;
+  onRowActionClick?: (
+    action: WritebackAction,
+    rowData: any[],
+    rowIndex: number,
+  ) => void;
 }
 
 interface TableState {
   data: Pick<DatasetData, "cols" | "rows" | "results_timezone"> | null;
   question: Question | null;
+  showActionModal: boolean;
+  selectedAction: WritebackAction | null;
+  selectedRowData: any[] | null;
+  selectedRowIndex: number | null;
 }
 
 class Table extends Component<TableProps, TableState> {
@@ -207,7 +219,7 @@ class Table extends Component<TableProps, TableState> {
       widget: ChartSettingsTableFormatting,
       default: [],
       getProps: (series: Series, settings: VisualizationSettings) => ({
-        cols: series[0].data.cols.filter(isFormattable),
+        cols: (series[0]?.data?.cols || []).filter(isFormattable),
         isPivoted: settings["table.pivot"],
       }),
 
@@ -235,6 +247,32 @@ class Table extends Component<TableProps, TableState> {
         );
       },
       readDependencies: [DataGrid.COLUMN_FORMATTING_SETTING, "table.pivot"],
+    },
+    "table.row_actions": {
+      get section() {
+        return t`Actions`;
+      },
+      get title() {
+        return t`Row actions`;
+      },
+      widget: "rowActionsSettings",
+      default: [],
+      getProps: (series: Series) => {
+        const [{ card }] = series;
+        // Check if this is a model by looking at the card type
+        const isModel = card.type === "model";
+        const modelId = isModel ? card.id : undefined;
+
+        return {
+          modelId,
+          isModel,
+        };
+      },
+      getHidden: (series: Series) => {
+        const [{ card }] = series;
+        // Only show this setting if we have a model
+        return card.type !== "model";
+      },
     },
   };
 
@@ -386,6 +424,10 @@ class Table extends Component<TableProps, TableState> {
   state: TableState = {
     data: null,
     question: null,
+    showActionModal: false,
+    selectedAction: null,
+    selectedRowData: null,
+    selectedRowIndex: null,
   };
 
   UNSAFE_componentWillMount() {
@@ -485,6 +527,79 @@ class Table extends Component<TableProps, TableState> {
     }
   };
 
+  handleRowActionClick = (
+    action: WritebackAction,
+    rowData: any[],
+    rowIndex: number,
+  ) => {
+    const { onRowActionClick } = this.props;
+
+    // If there's a custom row action handler, use it
+    if (onRowActionClick) {
+      onRowActionClick(action, rowData, rowIndex);
+      return;
+    }
+
+    // Store the action and row data, then show the action modal
+    this.setState({
+      showActionModal: true,
+      selectedAction: action,
+      selectedRowData: rowData,
+      selectedRowIndex: rowIndex,
+    });
+  };
+
+  handleActionModalClose = () => {
+    this.setState({
+      showActionModal: false,
+      selectedAction: null,
+      selectedRowData: null,
+      selectedRowIndex: null,
+    });
+  };
+
+  handleActionSubmit = async (parameters: Record<string, any>) => {
+    const { dashboard, dashcard, isDashboard } = this.props;
+    const { selectedAction } = this.state;
+
+    if (!isDashboard || !dashboard || !dashcard || !selectedAction) {
+      console.warn("Row actions are only supported in dashboard context");
+      return { success: false, error: "Invalid context" };
+    }
+
+    try {
+      // Import executeRowAction dynamically to avoid circular dependencies
+      const { executeRowAction } = await import(
+        "metabase/dashboard/actions/actions"
+      );
+      const { getStore } = await import("metabase/store");
+      const store = getStore();
+
+      // Create a mock action dashcard for execution
+      const actionDashcard = {
+        ...dashcard,
+        action_id: selectedAction.id,
+        action: selectedAction,
+      } as any;
+
+      const result = await executeRowAction({
+        dashboard,
+        dashcard: actionDashcard,
+        parameters,
+        dispatch: store.dispatch,
+      });
+
+      if (result.success) {
+        this.handleActionModalClose();
+      }
+
+      return result;
+    } catch (error) {
+      console.error("Failed to execute row action:", error);
+      return { success: false, error };
+    }
+  };
+
   render() {
     const { series, isDashboard, settings } = this.props;
     const { data } = this.state;
@@ -534,15 +649,38 @@ class Table extends Component<TableProps, TableState> {
       );
     }
 
+    const rowActions = settings["table.row_actions"] || [];
+
     return (
-      <TableInteractive
-        {...this.props}
-        question={this.state.question}
-        data={data}
-        isPivoted={isPivoted}
-        getColumnTitle={this.getColumnTitle}
-        getColumnSortDirection={this.getColumnSortDirection}
-      />
+      <>
+        <TableInteractive
+          {...this.props}
+          question={this.state.question}
+          data={data}
+          isPivoted={isPivoted}
+          getColumnTitle={this.getColumnTitle}
+          getColumnSortDirection={this.getColumnSortDirection}
+          rowActions={rowActions}
+          onRowActionClick={this.handleRowActionClick}
+        />
+        {this.state.showActionModal &&
+          this.state.selectedAction &&
+          this.state.selectedRowData && (
+            <ActionParametersInputModal
+              action={this.state.selectedAction}
+              title={this.state.selectedAction.name}
+              showEmptyState={false}
+              onClose={this.handleActionModalClose}
+              onSubmit={this.handleActionSubmit}
+              initialValues={createRowActionParameters(
+                this.state.selectedRowData,
+                data?.cols || [],
+                this.state.selectedRowIndex || 0,
+                this.state.selectedAction,
+              )}
+            />
+          )}
+      </>
     );
   }
 }
