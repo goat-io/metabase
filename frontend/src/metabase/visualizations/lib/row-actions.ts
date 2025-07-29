@@ -94,19 +94,52 @@ export function createRowActionParameters(
 ): Record<string, any> {
   const parameters: Record<string, any> = {};
 
+  // Ensure we have valid input data
+  if (!Array.isArray(rowData) || !Array.isArray(columns)) {
+    console.warn(
+      "Invalid row data or columns provided to createRowActionParameters",
+    );
+    return parameters;
+  }
+
   // Map column data to parameters using exact column names
   columns.forEach((col, index) => {
-    if (rowData[index] != null) {
-      parameters[col.name] = rowData[index];
+    if (col?.name && rowData[index] != null) {
+      // Ensure parameter values are serializable
+      const value = rowData[index];
+      if (
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean" ||
+        value === null
+      ) {
+        parameters[col.name] = value;
+      } else {
+        // Convert complex objects to strings to avoid serialization issues
+        parameters[col.name] = String(value);
+      }
     }
   });
 
   // If we have action parameter definitions, try to match columns to parameters
-  if (action?.parameters) {
+  if (action?.parameters && Array.isArray(action.parameters)) {
     action.parameters.forEach((actionParam) => {
-      const matchingColumnIndex = findMatchingColumn(actionParam, columns);
-      if (matchingColumnIndex >= 0 && rowData[matchingColumnIndex] != null) {
-        parameters[actionParam.id] = rowData[matchingColumnIndex];
+      if (actionParam?.id) {
+        const matchingColumnIndex = findMatchingColumn(actionParam, columns);
+        if (matchingColumnIndex >= 0 && rowData[matchingColumnIndex] != null) {
+          const value = rowData[matchingColumnIndex];
+          // Ensure parameter values are serializable
+          if (
+            typeof value === "string" ||
+            typeof value === "number" ||
+            typeof value === "boolean" ||
+            value === null
+          ) {
+            parameters[actionParam.id] = value;
+          } else {
+            parameters[actionParam.id] = String(value);
+          }
+        }
       }
     });
   }
@@ -115,21 +148,45 @@ export function createRowActionParameters(
   const idColumns = findIdColumns(columns, rowData);
 
   idColumns.forEach(({ columnName, value, isMainId }) => {
-    if (value != null) {
-      parameters[columnName] = value;
+    if (value != null && columnName) {
+      // Ensure parameter values are serializable
+      const serializedValue =
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean" ||
+        value === null
+          ? value
+          : String(value);
+
+      parameters[columnName] = serializedValue;
 
       // Also set common ID parameter names for convenience
       if (isMainId) {
-        parameters["id"] = value;
-        parameters["ID"] = value;
-        parameters["Id"] = value;
+        parameters["id"] = serializedValue;
+        parameters["ID"] = serializedValue;
+        parameters["Id"] = serializedValue;
       }
     }
   });
 
-  // Add special parameters
-  parameters["__row_index__"] = rowIndex;
-  parameters["__row_data__"] = rowData;
+  // Add special parameters (ensure they're serializable)
+  parameters["__row_index__"] = typeof rowIndex === "number" ? rowIndex : 0;
+
+  // Don't include the full row data as it may contain non-serializable objects
+  // Instead, include only serializable row data
+  const serializableRowData = rowData.map((value) => {
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean" ||
+      value === null
+    ) {
+      return value;
+    }
+    return String(value);
+  });
+  parameters["__row_data__"] = serializableRowData;
+
   return parameters;
 }
 

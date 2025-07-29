@@ -585,25 +585,40 @@ export const TableInteractiveInner = forwardRef(function TableInteractiveInner(
 
     // Add actions column if row actions are configured
     if (rowActions && rowActions.length > 0 && onRowActionClick) {
-      const actionsColumn: ColumnOptions<RowValues, RowValue> = {
-        id: "row-actions",
-        name: t`Actions`,
-        accessorFn: () => null,
-        cellVariant: "text",
-        enableResizing: false,
-        getCellClassName: () => "test-TableInteractive-actionCell",
-        header: () => t`Actions`,
-        align: "middle" as const,
-        cell: ({ row }) => (
-          <ActionCell
-            actions={rowActions}
-            rowData={row.original}
-            rowIndex={row.index}
-            onActionClick={onRowActionClick}
-          />
-        ),
-      };
-      dataColumns.push(actionsColumn);
+      // Validate row actions to ensure they have the required structure
+      const validRowActions = rowActions.filter(
+        (action) =>
+          action && action.action && action.action.id && action.action.name,
+      );
+
+      if (validRowActions.length > 0) {
+        const actionsColumn: ColumnOptions<RowValues, RowValue> = {
+          id: "row-actions",
+          name: t`Actions`,
+          accessorFn: () => null,
+          cellVariant: "text",
+          enableResizing: false,
+          getCellClassName: () => "test-TableInteractive-actionCell",
+          header: () => t`Actions`,
+          align: "middle" as const,
+          cell: ({ row }) => {
+            // Ensure row data is valid before passing to ActionCell
+            if (!row || !Array.isArray(row.original)) {
+              return null;
+            }
+
+            return (
+              <ActionCell
+                actions={validRowActions}
+                rowData={row.original}
+                rowIndex={row.index}
+                onActionClick={onRowActionClick}
+              />
+            );
+          },
+        };
+        dataColumns.push(actionsColumn);
+      }
     }
 
     return dataColumns;

@@ -91,4 +91,74 @@ describe("createRowActionParameters", () => {
     expect(result.ID).toBe(789);
     expect(result.Id).toBe(789);
   });
+
+  it("should handle invalid input data gracefully", () => {
+    // Test with null/undefined inputs
+    const result1 = createRowActionParameters(null as any, mockColumns, 0);
+    expect(result1).toEqual({});
+
+    const result2 = createRowActionParameters(mockRowData, null as any, 0);
+    expect(result2).toEqual({});
+
+    // Test with empty arrays
+    const result3 = createRowActionParameters([], [], 0);
+    expect(result3).toEqual({
+      __row_index__: 0,
+      __row_data__: [],
+    });
+  });
+
+  it("should serialize complex objects to strings", () => {
+    const complexRowData = [
+      123,
+      { nested: "object" },
+      [1, 2, 3],
+      new Date("2023-01-01"),
+    ];
+    const complexColumns = [
+      { name: "id", semantic_type: "type/PK", base_type: "type/Integer" },
+      { name: "object_col", semantic_type: null, base_type: "type/Text" },
+      { name: "array_col", semantic_type: null, base_type: "type/Text" },
+      { name: "date_col", semantic_type: null, base_type: "type/DateTime" },
+    ];
+
+    const result = createRowActionParameters(complexRowData, complexColumns, 0);
+
+    expect(result.id).toBe(123);
+    expect(typeof result.object_col).toBe("string");
+    expect(typeof result.array_col).toBe("string");
+    expect(typeof result.date_col).toBe("string");
+  });
+
+  it("should handle invalid action parameters gracefully", () => {
+    const invalidAction = {
+      parameters: [
+        null,
+        { id: null, name: "Invalid" },
+        { id: "valid_id", name: "Valid" },
+      ],
+    };
+
+    const result = createRowActionParameters(
+      mockRowData,
+      mockColumns,
+      0,
+      invalidAction as any,
+    );
+
+    // Should still work with valid parameters
+    expect(result.valid_id).toBeDefined();
+    // Should not crash on invalid parameters
+    expect(result).toBeDefined();
+  });
+
+  it("should handle non-numeric row index", () => {
+    const result = createRowActionParameters(
+      mockRowData,
+      mockColumns,
+      "invalid" as any,
+    );
+
+    expect(result.__row_index__).toBe(0); // Should default to 0
+  });
 });

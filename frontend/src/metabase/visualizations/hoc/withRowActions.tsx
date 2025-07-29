@@ -32,20 +32,39 @@ export function withRowActions<P extends VisualizationProps>(
             return;
           }
 
-          // Create parameters from row data
+          // Validate input data
+          if (!action || !Array.isArray(rowData)) {
+            console.warn("Invalid action or row data provided");
+            return;
+          }
+
+          // Create parameters from row data with better error handling
           const parameters: ParametersForActionExecution = {};
 
           // Map row data to action parameters based on column names
-          if (props.data?.cols && rowData) {
+          if (props.data?.cols && Array.isArray(props.data.cols) && rowData) {
             props.data.cols.forEach((col, index) => {
-              if (rowData[index] != null) {
-                parameters[col.name] = rowData[index];
+              if (col?.name && rowData[index] != null) {
+                // Ensure parameter values are serializable to prevent issues during state persistence
+                const value = rowData[index];
+                if (
+                  typeof value === "string" ||
+                  typeof value === "number" ||
+                  typeof value === "boolean" ||
+                  value === null
+                ) {
+                  parameters[col.name] = value;
+                } else {
+                  // Convert complex objects to strings to avoid serialization issues
+                  parameters[col.name] = String(value);
+                }
               }
             });
           }
 
           // Add row index as a special parameter
-          parameters["__row_index__"] = rowIndex;
+          parameters["__row_index__"] =
+            typeof rowIndex === "number" ? rowIndex : 0;
 
           try {
             await executeRowAction({
@@ -59,6 +78,7 @@ export function withRowActions<P extends VisualizationProps>(
             });
           } catch (error) {
             console.error("Failed to execute row action:", error);
+            // Don't throw the error to prevent breaking the UI
           }
         },
       [dashboard, dashcard, props.data?.cols, dispatch],

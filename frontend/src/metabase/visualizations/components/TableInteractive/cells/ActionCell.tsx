@@ -27,16 +27,40 @@ export function ActionCell({
   onActionClick,
 }: ActionCellProps) {
   const handleActionClick = (action: WritebackAction) => {
-    onActionClick(action, rowData, rowIndex);
+    // Validate inputs before calling the action
+    if (!action || !action.id || !Array.isArray(rowData)) {
+      console.warn("Invalid action or row data provided to ActionCell");
+      return;
+    }
+
+    try {
+      onActionClick(action, rowData, rowIndex);
+    } catch (error) {
+      console.error("Error executing row action:", error);
+    }
   };
 
-  if (!actions || actions.length === 0) {
+  // Validate actions array
+  if (!actions || !Array.isArray(actions) || actions.length === 0) {
+    return null;
+  }
+
+  // Filter out invalid actions
+  const validActions = actions.filter(
+    (actionConfig) =>
+      actionConfig &&
+      actionConfig.action &&
+      actionConfig.action.id &&
+      actionConfig.action.name,
+  );
+
+  if (validActions.length === 0) {
     return null;
   }
 
   return (
     <Flex gap="xs" align="center" justify="center">
-      {actions.map((actionConfig, index) => (
+      {validActions.map((actionConfig, index) => (
         <Button
           key={`${actionConfig.action.id}-${index}`}
           variant={actionConfig.variant || "subtle"}
