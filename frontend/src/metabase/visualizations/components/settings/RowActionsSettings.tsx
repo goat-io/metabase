@@ -2,7 +2,7 @@ import { t } from "ttag";
 
 import { skipToken, useListActionsQuery } from "metabase/api";
 import { colors } from "metabase/lib/colors";
-import { Button, Flex, Stack, Text } from "metabase/ui";
+import { ActionIcon, Button, Flex, Icon, Stack, Text } from "metabase/ui";
 import type { CardId, WritebackAction } from "metabase-types/api";
 
 import type { RowActionConfig } from "../../components/TableInteractive/cells/ActionCell";
@@ -70,26 +70,26 @@ export function RowActionsSettings({
               justify="space-between"
               p="sm"
               style={{
-                border: `1px solid ${colors.white}`,
+                border: `1px solid ${colors.brand}`,
                 borderRadius: "4px",
+                background: colors.white, // Ensures visibility
               }}
             >
               <Flex align="center" gap="sm">
                 <Text size="sm" fw={500}>
                   {config.action.name}
                 </Text>
-                <Text size="xs" color="dimmed">
+                <Text size="xs" c="dimmed">
                   {config.label || config.action.name}
                 </Text>
               </Flex>
-              <Button
+              <ActionIcon
                 variant="subtle"
-                size="xs"
-                color="red"
+                size="md"
                 onClick={() => handleRemoveAction(index)}
               >
-                {t`Remove`}
-              </Button>
+                <Icon name="close" c="text-primary" />
+              </ActionIcon>
             </Flex>
           ))}
         </Stack>
