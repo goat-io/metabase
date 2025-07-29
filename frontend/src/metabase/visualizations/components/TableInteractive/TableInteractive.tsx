@@ -116,12 +116,19 @@ interface TableProps extends VisualizationProps {
   ) => void;
 }
 
-const getColumnOrder = (cols: DatasetColumn[], hasIndexColumn: boolean) => {
+const getColumnOrder = (
+  cols: DatasetColumn[],
+  hasIndexColumn: boolean,
+  hasRowActionsColumn: boolean = false,
+) => {
   const dataColumns = cols.map((col) => col.name);
-  if (!hasIndexColumn) {
-    return dataColumns;
+  let baseOrder = hasIndexColumn
+    ? [ROW_ID_COLUMN_ID, ...dataColumns]
+    : dataColumns;
+  if (hasRowActionsColumn) {
+    baseOrder = ["row-actions", ...baseOrder];
   }
-  return [ROW_ID_COLUMN_ID, ...dataColumns];
+  return baseOrder;
 };
 
 const getColumnSizing = (
@@ -205,10 +212,27 @@ export const TableInteractiveInner = forwardRef(function TableInteractiveInner(
     };
   }, [sorting, cols, isClientSideSortingEnabled, getServerColumnSortDirection]);
 
+  // Determine if row-actions column should be present
+  const hasRowActionsColumn = useMemo(() => {
+    if (!rowActions || !onRowActionClick || rowActions.length === 0) {
+      return false;
+    }
+    return rowActions.some(
+      (action) =>
+        action && action.action && action.action.id && action.action.name,
+    );
+  }, [rowActions, onRowActionClick]);
+
   const columnOrder = useMemo(() => {
-    return getColumnOrder(cols, settings["table.row_index"]);
+    const CO = getColumnOrder(
+      cols,
+      settings["table.row_index"],
+      hasRowActionsColumn,
+    );
+    // console.log({ CO, cols });
+    return CO;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cols, settings["table.row_index"]]);
+  }, [cols, settings["table.row_index"], hasRowActionsColumn]);
 
   const columnWidths = settings["table.column_widths"];
   const columnSizingMap = useMemo(() => {
@@ -596,8 +620,8 @@ export const TableInteractiveInner = forwardRef(function TableInteractiveInner(
           id: "row-actions",
           name: t`Actions`,
           accessorFn: () => null,
-          cellVariant: "text",
-          enableResizing: false,
+          cellVariant: "pill",
+          enableResizing: true,
           getCellClassName: () => "test-TableInteractive-actionCell",
           header: () => t`Actions`,
           align: "middle" as const,
@@ -617,7 +641,7 @@ export const TableInteractiveInner = forwardRef(function TableInteractiveInner(
             );
           },
         };
-        dataColumns.push(actionsColumn);
+        dataColumns.unshift(actionsColumn);
       }
     }
 
