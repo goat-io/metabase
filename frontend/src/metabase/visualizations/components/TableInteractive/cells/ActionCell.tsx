@@ -60,22 +60,38 @@ export function ActionCell({
 
   return (
     <Flex gap="xs" align="center" justify="center">
-      {validActions.map((actionConfig, index) => (
-        <Button
-          key={`${actionConfig.action.id}-${index}`}
-          variant={actionConfig.variant || "subtle"}
-          size={actionConfig.size || "xs"}
-          onClick={() => handleActionClick(actionConfig.action)}
-          leftSection={
-            actionConfig.icon ? (
-              <Icon name={actionConfig.icon as any} size={12} />
-            ) : null
-          }
-          title={actionConfig.action.description || actionConfig.label}
-        >
-          {actionConfig.label || actionConfig.action.name}
-        </Button>
-      ))}
+      {validActions.map((actionConfig, index) => {
+        // Icon logic
+        let iconName = actionConfig.icon;
+        let title = actionConfig.label || actionConfig.action.name || "";
+        const lowercaseTitle = title.toLowerCase();
+
+        if (lowercaseTitle.includes("delete")) {
+          iconName = "trash";
+          title = "";
+        } else if (lowercaseTitle.includes("add")) {
+          iconName = "plus";
+          title = "";
+        } else if (lowercaseTitle.includes("update")) {
+          iconName = "pencil";
+          title = "";
+        }
+
+        return (
+          <Button
+            key={`${actionConfig.action.id}-${index}`}
+            variant={actionConfig.variant || "subtle"}
+            size={actionConfig.size || "xs"}
+            onClick={() => handleActionClick(actionConfig.action)}
+            leftSection={
+              iconName ? <Icon name={iconName as any} size={12} /> : null
+            }
+            title={title}
+          >
+            {title}
+          </Button>
+        );
+      })}
     </Flex>
   );
 }

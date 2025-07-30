@@ -623,8 +623,24 @@ export const TableInteractiveInner = forwardRef(function TableInteractiveInner(
           cellVariant: "pill",
           enableResizing: true,
           getCellClassName: () => "test-TableInteractive-actionCell",
-          header: () => t`Actions`,
-          align: "middle" as const,
+          header: () => {
+            return (
+              <HeaderCellWithColumnInfo
+                getInfoPopoversDisabled={() => true}
+                timezone={data.results_timezone}
+                question={question}
+                column={{ name: "Actions", source: "native" } as DatasetColumn}
+                name={t`Actions`}
+                align="left"
+                sort={undefined}
+                variant={mode != null || isDashboard ? "light" : "outline"}
+                columnIndex={-1}
+                theme={theme}
+                renderTableHeader={undefined}
+              />
+            );
+          },
+          align: "left" as const,
           cell: ({ row }) => {
             // Ensure row data is valid before passing to ActionCell
             if (!row || !Array.isArray(row.original)) {
