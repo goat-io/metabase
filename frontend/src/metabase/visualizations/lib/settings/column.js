@@ -463,7 +463,7 @@ export function getSettingDefinitionsForColumn(series, column) {
 export function isPivoted(series, settings) {
   const [{ data }] = series;
 
-  if (!settings["table.pivot"]) {
+  if (!settings["table.pivot"] || !data || !data.cols) {
     return false;
   }
 
@@ -507,6 +507,9 @@ export const tableColumnSettings = {
     widget: ChartSettingTableColumns,
     getHidden: (series, vizSettings) => vizSettings["table.pivot"],
     getValue: ([{ data }], vizSettings) => {
+      if (!data || !data.cols) {
+        return vizSettings["table.columns"] ?? [];
+      }
       const { cols } = data;
       const settings = vizSettings["table.columns"] ?? [];
       const columnIndexes = findColumnIndexesForColumnSettings(cols, settings);

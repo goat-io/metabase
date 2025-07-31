@@ -26,7 +26,13 @@
     [{:type :metabase.lib.parse/param
       :name name}] (params/->Param (str/trim name))
     [{:type :metabase.lib.parse/optional
-      :contents contents}] (params/->Optional (map ->param contents))))
+      :contents contents}] (params/->Optional (map ->param contents))
+    ;; Handle unexpected parameter formats gracefully
+    [m :guard map?] (if (:name m)
+                      (params/->Param (str/trim (:name m)))
+                      (str m))
+    ;; Fallback for any other unexpected values
+    [other] (str other)))
 
 (mu/defn parse :- [:sequential ParsedToken]
   "Attempts to parse parameters in string `s`. Parses any optional clauses or parameters found, and returns a sequence

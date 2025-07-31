@@ -61,9 +61,14 @@
   ;; they're normalized properly before proceeding.
   (let [m        (cond-> m
                    (seq parameters) (update :parameters (partial mbql.normalize/normalize-fragment [:parameters])))
-        expanded (if (or source-table source-query)
-                   (expand-mbql-params outer-query m)
-                   (qp.native/expand-inner m))]
+        expanded (try
+                   (if (or source-table source-query)
+                     (expand-mbql-params outer-query m)
+                     (qp.native/expand-inner m))
+                   (catch Exception e
+                     (log/warn e "Error expanding parameters, falling back to original query")
+                     ;; Return the original map without parameters to prevent query failure
+                     (dissoc m :parameters :template-tags)))]
     (dissoc expanded :parameters :template-tags)))
 
 (defn- expand-all

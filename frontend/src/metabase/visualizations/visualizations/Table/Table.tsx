@@ -3,6 +3,7 @@ import { Component } from "react";
 import { t } from "ttag";
 import _ from "underscore";
 
+import { ActionParametersInputModal } from "metabase/actions/containers/ActionParametersInputForm";
 import CS from "metabase/css/core/index.css";
 import * as DataGrid from "metabase/lib/data_grid";
 import { displayNameForColumn } from "metabase/lib/formatting";
@@ -13,6 +14,7 @@ import {
   ChartSettingsTableFormatting,
   isFormattable,
 } from "metabase/visualizations/components/settings/ChartSettingsTableFormatting";
+import { createRowActionParameters } from "metabase/visualizations/lib/row-actions";
 import {
   isPivoted as _isPivoted,
   columnSettings,
@@ -46,6 +48,7 @@ import type {
   DatasetData,
   Series,
   VisualizationSettings,
+  WritebackAction,
 } from "metabase-types/api";
 
 import { TableInteractive } from "../../components/TableInteractive";
@@ -57,11 +60,20 @@ import type {
 
 interface TableProps extends VisualizationProps {
   isShowingDetailsOnlyColumns?: boolean;
+  onRowActionClick?: (
+    action: WritebackAction,
+    rowData: any[],
+    rowIndex: number,
+  ) => void;
 }
 
 interface TableState {
   data: Pick<DatasetData, "cols" | "rows" | "results_timezone"> | null;
   question: Question | null;
+  showActionModal: boolean;
+  selectedAction: WritebackAction | null;
+  selectedRowData: any[] | null;
+  selectedRowIndex: number | null;
 }
 
 class Table extends Component<TableProps, TableState> {
@@ -148,19 +160,17 @@ class Table extends Component<TableProps, TableState> {
         return t`Pivot column`;
       },
       widget: "field",
-      getDefault: ([
-        {
-          data: { cols, rows },
-        },
-      ]: Series) => {
+      getDefault: ([{ data }]: Series) => {
+        if (!data || !data.cols || !data.rows) {
+          return null;
+        }
+        const { cols, rows } = data;
         return getDefaultPivotColumn(cols, rows)?.name;
       },
-      getProps: ([
-        {
-          data: { cols },
-        },
-      ]: Series) => ({
-        options: cols.filter(isDimension).map(getOptionFromColumn),
+      getProps: ([{ data }]: Series) => ({
+        options: data?.cols
+          ? data.cols.filter(isDimension).map(getOptionFromColumn)
+          : [],
       }),
       getHidden: (series: Series, settings: VisualizationSettings) =>
         !settings["table.pivot"],
@@ -179,6 +189,9 @@ class Table extends Component<TableProps, TableState> {
         [{ data }]: Series,
         { "table.pivot_column": pivotCol }: VisualizationSettings,
       ) => {
+        if (!data || !data.cols) {
+          return null;
+        }
         // We try to show numeric values in pivot cells, but if none are
         // available, we fall back to the last column in the unpivoted table
         const nonPivotCols = data.cols.filter((c) => c.name !== pivotCol);
@@ -186,12 +199,8 @@ class Table extends Component<TableProps, TableState> {
         const { name } = nonPivotCols.find(isMetric) || lastCol || {};
         return name;
       },
-      getProps: ([
-        {
-          data: { cols },
-        },
-      ]: Series) => ({
-        options: cols.map(getOptionFromColumn),
+      getProps: ([{ data }]: Series) => ({
+        options: data?.cols ? data.cols.map(getOptionFromColumn) : [],
       }),
       getHidden: (series: Series, settings: VisualizationSettings) =>
         !settings["table.pivot"],
@@ -207,26 +216,20 @@ class Table extends Component<TableProps, TableState> {
       widget: ChartSettingsTableFormatting,
       default: [],
       getProps: (series: Series, settings: VisualizationSettings) => ({
-        cols: series[0].data.cols.filter(isFormattable),
+        cols: (series[0]?.data?.cols || []).filter(isFormattable),
         isPivoted: settings["table.pivot"],
       }),
 
-      getHidden: ([
-        {
-          data: { cols },
-        },
-      ]: Series) => cols.filter(isFormattable).length === 0,
+      getHidden: ([{ data }]: Series) =>
+        !data?.cols || data.cols.filter(isFormattable).length === 0,
       readDependencies: ["table.pivot"],
     },
     "table._cell_background_getter": {
-      getValue(
-        [
-          {
-            data: { rows, cols },
-          },
-        ]: Series,
-        settings: VisualizationSettings,
-      ) {
+      getValue([{ data }]: Series, settings: VisualizationSettings) {
+        if (!data || !data.rows || !data.cols) {
+          return () => undefined;
+        }
+        const { rows, cols } = data;
         return makeCellBackgroundGetter(
           rows,
           cols,
@@ -235,6 +238,32 @@ class Table extends Component<TableProps, TableState> {
         );
       },
       readDependencies: [DataGrid.COLUMN_FORMATTING_SETTING, "table.pivot"],
+    },
+    "table.row_actions": {
+      get section() {
+        return t`Actions`;
+      },
+      get title() {
+        return t`Row actions`;
+      },
+      widget: "rowActionsSettings",
+      default: [],
+      getProps: (series: Series) => {
+        const [{ card }] = series;
+        // Check if this is a model by looking at the card type
+        const isModel = card.type === "model";
+        const modelId = isModel ? card.id : undefined;
+
+        return {
+          modelId,
+          isModel,
+        };
+      },
+      getHidden: (series: Series) => {
+        const [{ card }] = series;
+        // Only show this setting if we have a model
+        return card.type !== "model";
+      },
     },
   };
 
@@ -386,6 +415,10 @@ class Table extends Component<TableProps, TableState> {
   state: TableState = {
     data: null,
     question: null,
+    showActionModal: false,
+    selectedAction: null,
+    selectedRowData: null,
+    selectedRowIndex: null,
   };
 
   UNSAFE_componentWillMount() {
@@ -405,6 +438,15 @@ class Table extends Component<TableProps, TableState> {
     const [{ card, data }] = series;
     // construct a Question that is in-sync with query results
     const question = new Question(card, metadata);
+
+    // Handle case when data is undefined
+    if (!data) {
+      this.setState({
+        data: null,
+        question,
+      });
+      return;
+    }
 
     if (Table.isPivoted(series, settings)) {
       const pivotIndex = _.findIndex(
@@ -485,6 +527,91 @@ class Table extends Component<TableProps, TableState> {
     }
   };
 
+  handleRowActionClick = (
+    action: WritebackAction,
+    rowData: any[],
+    rowIndex: number,
+  ) => {
+    const { onRowActionClick } = this.props;
+
+    // Validate input data
+    if (!action || !Array.isArray(rowData)) {
+      console.warn(
+        "Invalid action or row data provided to handleRowActionClick",
+      );
+      return;
+    }
+
+    // If there's a custom row action handler, use it
+    if (onRowActionClick) {
+      try {
+        onRowActionClick(action, rowData, rowIndex);
+      } catch (error) {
+        console.error("Error in custom row action handler:", error);
+      }
+      return;
+    }
+
+    // Store the action and row data, then show the action modal
+    this.setState({
+      showActionModal: true,
+      selectedAction: action,
+      selectedRowData: rowData,
+      selectedRowIndex: typeof rowIndex === "number" ? rowIndex : 0,
+    });
+  };
+
+  handleActionModalClose = () => {
+    this.setState({
+      showActionModal: false,
+      selectedAction: null,
+      selectedRowData: null,
+      selectedRowIndex: null,
+    });
+  };
+
+  handleActionSubmit = async (parameters: Record<string, any>) => {
+    const { dashboard, dashcard, isDashboard } = this.props;
+    const { selectedAction } = this.state;
+
+    if (!isDashboard || !dashboard || !dashcard || !selectedAction) {
+      console.warn("Row actions are only supported in dashboard context");
+      return { success: false, error: "Invalid context" };
+    }
+
+    try {
+      // Import executeRowAction dynamically to avoid circular dependencies
+      const { executeRowAction } = await import(
+        "metabase/dashboard/actions/actions"
+      );
+      const { getStore } = await import("metabase/store");
+      const store = getStore();
+
+      // Create a mock action dashcard for execution
+      const actionDashcard = {
+        ...dashcard,
+        action_id: selectedAction.id,
+        action: selectedAction,
+      } as any;
+
+      const result = await executeRowAction({
+        dashboard,
+        dashcard: actionDashcard,
+        parameters,
+        dispatch: store.dispatch,
+      });
+
+      if (result.success) {
+        this.handleActionModalClose();
+      }
+
+      return result;
+    } catch (error) {
+      console.error("Failed to execute row action:", error);
+      return { success: false, error };
+    }
+  };
+
   render() {
     const { series, isDashboard, settings } = this.props;
     const { data } = this.state;
@@ -534,15 +661,45 @@ class Table extends Component<TableProps, TableState> {
       );
     }
 
+    // Safely get row actions and validate them
+    const rawRowActions = settings["table.row_actions"];
+    const rowActions = Array.isArray(rawRowActions)
+      ? rawRowActions.filter(
+          (action) => action && action.action && action.action.id,
+        )
+      : [];
+
     return (
-      <TableInteractive
-        {...this.props}
-        question={this.state.question}
-        data={data}
-        isPivoted={isPivoted}
-        getColumnTitle={this.getColumnTitle}
-        getColumnSortDirection={this.getColumnSortDirection}
-      />
+      <>
+        <TableInteractive
+          {...this.props}
+          question={this.state.question}
+          data={data}
+          isPivoted={isPivoted}
+          getColumnTitle={this.getColumnTitle}
+          getColumnSortDirection={this.getColumnSortDirection}
+          rowActions={rowActions}
+          onRowActionClick={this.handleRowActionClick}
+        />
+        {this.state.showActionModal &&
+          this.state.selectedAction &&
+          this.state.selectedRowData &&
+          data?.cols && (
+            <ActionParametersInputModal
+              action={this.state.selectedAction}
+              title={this.state.selectedAction.name}
+              showEmptyState={false}
+              onClose={this.handleActionModalClose}
+              onSubmit={this.handleActionSubmit}
+              initialValues={createRowActionParameters(
+                this.state.selectedRowData,
+                data.cols,
+                this.state.selectedRowIndex || 0,
+                this.state.selectedAction,
+              )}
+            />
+          )}
+      </>
     );
   }
 }

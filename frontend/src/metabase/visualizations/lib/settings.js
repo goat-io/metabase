@@ -12,6 +12,7 @@ import { ChartSettingRadio } from "metabase/visualizations/components/settings/C
 import { ChartSettingSegmentedControl } from "metabase/visualizations/components/settings/ChartSettingSegmentedControl";
 import { ChartSettingSelect } from "metabase/visualizations/components/settings/ChartSettingSelect";
 import { ChartSettingToggle } from "metabase/visualizations/components/settings/ChartSettingToggle";
+import { RowActionsSettings } from "metabase/visualizations/components/settings/RowActionsSettings";
 
 const WIDGETS = {
   input: ChartSettingInput,
@@ -26,6 +27,7 @@ const WIDGETS = {
   color: ChartSettingColorPicker,
   colors: ChartSettingColorsPicker,
   multiselect: ChartSettingMultiSelect,
+  rowActionsSettings: RowActionsSettings,
 };
 
 export function getComputedSettings(

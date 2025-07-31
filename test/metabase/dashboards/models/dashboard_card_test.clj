@@ -353,3 +353,26 @@
             transformed  (dashboard-card/from-parsed-json deserialized)]
         (is (= dashcard
                transformed))))))
+
+(deftest ^:parallel row-actions-visualization-settings-test
+  (testing "Row actions should be persisted and retrieved in visualization settings"
+    (mt/with-temp [:model/Dashboard     {dashboard-id :id} {}
+                   :model/Card          {card-id :id}      {:type "model"}
+                   :model/DashboardCard {dashcard-id :id}  {:dashboard_id       dashboard-id
+                                                            :card_id            card-id
+                                                            :visualization_settings
+                                                            {"table.row_actions"
+                                                             [{"action"  {"id" 123 "name" "Test Action"}
+                                                               "label"   "Test Action"
+                                                               "icon"    "play"
+                                                               "variant" "subtle"
+                                                               "size"    "xs"}]}}]
+      (let [retrieved-dashcard (dashboard-card/retrieve-dashboard-card dashcard-id)]
+        (testing "Row actions are properly stored and retrieved"
+          (is (not (empty? (:visualization_settings retrieved-dashcard))))
+          (is (= [{:action  {:id 123 :name "Test Action"}
+                   :label   "Test Action"
+                   :icon    "play"
+                   :variant "subtle"
+                   :size    "xs"}]
+                 (get (:visualization_settings retrieved-dashcard) :table.row_actions))))))))

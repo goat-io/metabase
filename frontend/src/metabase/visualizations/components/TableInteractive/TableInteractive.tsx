@@ -68,9 +68,11 @@ import type {
   RowValue,
   RowValues,
   VisualizationSettings,
+  WritebackAction,
 } from "metabase-types/api";
 
 import S from "./TableInteractive.module.css";
+import { ActionCell, type RowActionConfig } from "./cells/ActionCell";
 import {
   HeaderCellWithColumnInfo,
   type HeaderCellWithColumnInfoProps,
@@ -106,14 +108,27 @@ interface TableProps extends VisualizationProps {
   renderTableHeader: HeaderCellWithColumnInfoProps["renderTableHeader"];
   onUpdateVisualizationSettings: (settings: VisualizationSettings) => void;
   onZoomRow?: (objectId: number | string) => void;
+  rowActions?: RowActionConfig[];
+  onRowActionClick?: (
+    action: WritebackAction,
+    rowData: any[],
+    rowIndex: number,
+  ) => void;
 }
 
-const getColumnOrder = (cols: DatasetColumn[], hasIndexColumn: boolean) => {
+const getColumnOrder = (
+  cols: DatasetColumn[],
+  hasIndexColumn: boolean,
+  hasRowActionsColumn: boolean = false,
+) => {
   const dataColumns = cols.map((col) => col.name);
-  if (!hasIndexColumn) {
-    return dataColumns;
+  let baseOrder = hasIndexColumn
+    ? [ROW_ID_COLUMN_ID, ...dataColumns]
+    : dataColumns;
+  if (hasRowActionsColumn) {
+    baseOrder = ["row-actions", ...baseOrder];
   }
-  return [ROW_ID_COLUMN_ID, ...dataColumns];
+  return baseOrder;
 };
 
 const getColumnSizing = (
@@ -164,6 +179,8 @@ export const TableInteractiveInner = forwardRef(function TableInteractiveInner(
     getColumnSortDirection: getServerColumnSortDirection,
     onVisualizationClick,
     onUpdateVisualizationSettings,
+    rowActions,
+    onRowActionClick,
   }: TableProps,
   ref: Ref<HTMLDivElement>,
 ) {
@@ -195,10 +212,27 @@ export const TableInteractiveInner = forwardRef(function TableInteractiveInner(
     };
   }, [sorting, cols, isClientSideSortingEnabled, getServerColumnSortDirection]);
 
+  // Determine if row-actions column should be present
+  const hasRowActionsColumn = useMemo(() => {
+    if (!rowActions || !onRowActionClick || rowActions.length === 0) {
+      return false;
+    }
+    return rowActions.some(
+      (action) =>
+        action && action.action && action.action.id && action.action.name,
+    );
+  }, [rowActions, onRowActionClick]);
+
   const columnOrder = useMemo(() => {
-    return getColumnOrder(cols, settings["table.row_index"]);
+    const CO = getColumnOrder(
+      cols,
+      settings["table.row_index"],
+      hasRowActionsColumn,
+    );
+    // console.log({ CO, cols });
+    return CO;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cols, settings["table.row_index"]]);
+  }, [cols, settings["table.row_index"], hasRowActionsColumn]);
 
   const columnWidths = settings["table.column_widths"];
   const columnSizingMap = useMemo(() => {
@@ -464,7 +498,7 @@ export const TableInteractiveInner = forwardRef(function TableInteractiveInner(
   }, [isRawTable, mode, onVisualizationClick, question, isPivoted]);
 
   const columnsOptions: ColumnOptions<RowValues, RowValue>[] = useMemo(() => {
-    return cols.map((col, columnIndex) => {
+    const dataColumns = cols.map((col, columnIndex) => {
       const columnSettings = settings.column?.(col) ?? {};
 
       const wrap =
@@ -572,6 +606,62 @@ export const TableInteractiveInner = forwardRef(function TableInteractiveInner(
 
       return options;
     });
+
+    // Add actions column if row actions are configured
+    if (rowActions && rowActions.length > 0 && onRowActionClick) {
+      // Validate row actions to ensure they have the required structure
+      const validRowActions = rowActions.filter(
+        (action) =>
+          action && action.action && action.action.id && action.action.name,
+      );
+
+      if (validRowActions.length > 0) {
+        const actionsColumn: ColumnOptions<RowValues, RowValue> = {
+          id: "row-actions",
+          name: t`Actions`,
+          accessorFn: () => null,
+          cellVariant: "pill",
+          enableResizing: true,
+          getCellClassName: () => "test-TableInteractive-actionCell",
+          header: () => {
+            return (
+              <HeaderCellWithColumnInfo
+                getInfoPopoversDisabled={() => true}
+                timezone={data.results_timezone}
+                question={question}
+                column={{ name: "Actions", source: "native" } as DatasetColumn}
+                name={t`Actions`}
+                align="left"
+                sort={undefined}
+                variant={mode != null || isDashboard ? "light" : "outline"}
+                columnIndex={-1}
+                theme={theme}
+                renderTableHeader={undefined}
+              />
+            );
+          },
+          align: "left" as const,
+          cell: ({ row }) => {
+            // Ensure row data is valid before passing to ActionCell
+            if (!row || !Array.isArray(row.original)) {
+              return null;
+            }
+
+            return (
+              <ActionCell
+                actions={validRowActions}
+                rowData={row.original}
+                rowIndex={row.index}
+                onActionClick={onRowActionClick}
+              />
+            );
+          },
+        };
+        dataColumns.unshift(actionsColumn);
+      }
+    }
+
+    return dataColumns;
   }, [
     theme,
     data,
@@ -589,6 +679,8 @@ export const TableInteractiveInner = forwardRef(function TableInteractiveInner(
     isDashboard,
     tc,
     getInfoPopoversDisabledRef,
+    rowActions,
+    onRowActionClick,
   ]);
 
   const handleColumnResize = useCallback(
